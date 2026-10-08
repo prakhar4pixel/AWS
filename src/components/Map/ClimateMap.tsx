@@ -13,99 +13,90 @@ interface ClimateMapProps {
     onModeChange?: (mode: "polygon" | "delete" | "simple_select") => void;
 }
 
-// MapboxDraw styles including vertex points and polygon fill styling
+// MapboxDraw styles using MapLibre GL JS expressions (['get', 'active'])
 const customDrawStyles = [
-    // ACTIVE / DRAWING POLYGON FILL
+    // 1. Polygon Fill — active drawing fill & completed fill
     {
-        id: "gl-draw-polygon-fill-active",
+        id: "gl-draw-polygon-fill",
         type: "fill",
-        filter: ["all", ["==", "$type", "Polygon"], ["!=", "mode", "static"]],
-        paint: {
-            "fill-color": "#10b981",
-            "fill-opacity": 0.3,
-        },
-    },
-    // INACTIVE / COMPLETED POLYGON FILL
-    {
-        id: "gl-draw-polygon-fill-inactive",
-        type: "fill",
-        filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
-        paint: {
-            "fill-color": "#059669",
-            "fill-opacity": 0.25,
-        },
-    },
-    // POLYGON STROKE OUTLINE ACTIVE
-    {
-        id: "gl-draw-polygon-stroke-active",
-        type: "line",
         filter: ["all", ["==", "$type", "Polygon"]],
+        paint: {
+            "fill-color": [
+                "case",
+                ["==", ["get", "active"], "true"], "#10b981",
+                "#059669"
+            ],
+            "fill-outline-color": [
+                "case",
+                ["==", ["get", "active"], "true"], "#10b981",
+                "#059669"
+            ],
+            "fill-opacity": [
+                "case",
+                ["==", ["get", "active"], "true"], 0.35,
+                0.25
+            ]
+        }
+    },
+    // 2. Lines — Polygon outline stroke & LineString while placing points
+    {
+        id: "gl-draw-lines",
+        type: "line",
+        filter: ["any", ["==", "$type", "LineString"], ["==", "$type", "Polygon"]],
         layout: {
             "line-cap": "round",
-            "line-join": "round",
+            "line-join": "round"
         },
         paint: {
-            "line-color": "#10b981",
+            "line-color": [
+                "case",
+                ["==", ["get", "active"], "true"], "#10b981",
+                "#059669"
+            ],
             "line-width": 3,
-        },
+            "line-dasharray": [
+                "case",
+                ["==", ["get", "active"], "true"], ["literal", [0.2, 2]],
+                ["literal", [1, 0]]
+            ]
+        }
     },
-    // POLYGON STROKE STATIC
+    // 3. Vertex Points — Outer white glow
     {
-        id: "gl-draw-polygon-stroke-static",
-        type: "line",
-        filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
+        id: "gl-draw-vertex-outer",
+        type: "circle",
+        filter: ["all", ["==", "$type", "Point"], ["==", "meta", "vertex"], ["!=", "mode", "static"]],
         paint: {
-            "line-color": "#059669",
-            "line-width": 3,
-        },
+            "circle-radius": 7,
+            "circle-color": "#ffffff"
+        }
     },
-    // DRAWING LINE PHASES
+    // 4. Vertex Points — Inner active/inactive color
     {
-        id: "gl-draw-line-active",
-        type: "line",
-        filter: ["all", ["==", "$type", "LineString"], ["!=", "mode", "static"]],
+        id: "gl-draw-vertex-inner",
+        type: "circle",
+        filter: ["all", ["==", "$type", "Point"], ["==", "meta", "vertex"], ["!=", "mode", "static"]],
         paint: {
-            "line-color": "#10b981",
-            "line-dasharray": [0.2, 2],
-            "line-width": 3,
-        },
+            "circle-radius": 5,
+            "circle-color": [
+                "case",
+                ["==", ["get", "active"], "true"], "#ef4444",
+                "#10b981"
+            ]
+        }
     },
-    // VERTEX POINTS - MIDPOINTS
+    // 5. Midpoint handles
     {
-        id: "gl-draw-polygon-midpoint",
+        id: "gl-draw-midpoint",
         type: "circle",
         filter: ["all", ["==", "$type", "Point"], ["==", "meta", "midpoint"]],
         paint: {
-            "circle-radius": 5,
+            "circle-radius": 4,
             "circle-color": "#f59e0b",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#ffffff",
-        },
-    },
-    // VERTEX POINTS - ACTIVE / CLICKED POINTS
-    {
-        id: "gl-draw-point-active",
-        type: "circle",
-        filter: ["all", ["==", "$type", "Point"], ["==", "meta", "vertex"]],
-        paint: {
-            "circle-radius": 7,
-            "circle-color": "#ef4444",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#ffffff",
-        },
-    },
-    // VERTEX POINTS - INACTIVE / ALL POLYGON CORNERS
-    {
-        id: "gl-draw-point-inactive",
-        type: "circle",
-        filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"]],
-        paint: {
-            "circle-radius": 6,
-            "circle-color": "#10b981",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#ffffff",
-        },
-    },
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": "#ffffff"
+        }
+    }
 ];
 
 export default function ClimateMap({ drawMode = "polygon", onSelectionChange, onModeChange }: ClimateMapProps) {
@@ -151,12 +142,12 @@ export default function ClimateMap({ drawMode = "polygon", onSelectionChange, on
             "top-right"
         );
 
-        // Polygon drawing control
+        // Polygon drawing control — hide default UI since we have custom DrawToolbar
         const drawControl = new MapboxDraw({
-            displayControlsDefault: true,
+            displayControlsDefault: false,
             controls: {
-                polygon: true,
-                trash: true,
+                polygon: false,
+                trash: false,
                 point: false,
                 line_string: false,
                 combine_features: false,

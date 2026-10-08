@@ -76,7 +76,7 @@ html, body, #root, .app {
 }
 
 /* Ensure maplibre native controls sit below top custom toolbar */
-.mapboxgl-ctrl-top-left {
+.maplibregl-ctrl-top-left {
   top: 70px !important;
   left: 10px !important;
 }
