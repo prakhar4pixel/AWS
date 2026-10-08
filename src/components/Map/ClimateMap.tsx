@@ -1,0 +1,232 @@
+import { useEffect, useRef } from "react";
+import * as maplibregl from "maplibre-gl";
+import MapboxDraw from "@mapbox/mapbox-gl-draw";
+import "maplibre-gl/dist/maplibre-gl.css";
+import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
+import type { Feature, Polygon, MultiPolygon } from "geojson";
+import { calculateAreaMetrics } from "../../utils/geo";
+import type { SelectionInfo } from "../../types/gis";
+
+interface ClimateMapProps {
+    drawMode?: "polygon" | "delete" | "simple_select";
+    onSelectionChange?: (selection: SelectionInfo) => void;
+    onModeChange?: (mode: "polygon" | "delete" | "simple_select") => void;
+}
+
+// MapboxDraw styles including vertex points and polygon fill styling
+const customDrawStyles = [
+    // ACTIVE / DRAWING POLYGON FILL
+    {
+        id: "gl-draw-polygon-fill-active",
+        type: "fill",
+        filter: ["all", ["==", "$type", "Polygon"], ["!=", "mode", "static"]],
+        paint: {
+            "fill-color": "#10b981",
+            "fill-opacity": 0.3,
+        },
+    },
+    // INACTIVE / COMPLETED POLYGON FILL
+    {
+        id: "gl-draw-polygon-fill-inactive",
+        type: "fill",
+        filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
+        paint: {
+            "fill-color": "#059669",
+            "fill-opacity": 0.25,
+        },
+    },
+    // POLYGON STROKE OUTLINE ACTIVE
+    {
+        id: "gl-draw-polygon-stroke-active",
+        type: "line",
+        filter: ["all", ["==", "$type", "Polygon"]],
+        layout: {
+            "line-cap": "round",
+            "line-join": "round",
+        },
+        paint: {
+            "line-color": "#10b981",
+            "line-width": 3,
+        },
+    },
+    // POLYGON STROKE STATIC
+    {
+        id: "gl-draw-polygon-stroke-static",
+        type: "line",
+        filter: ["all", ["==", "$type", "Polygon"], ["==", "mode", "static"]],
+        paint: {
+            "line-color": "#059669",
+            "line-width": 3,
+        },
+    },
+    // DRAWING LINE PHASES
+    {
+        id: "gl-draw-line-active",
+        type: "line",
+        filter: ["all", ["==", "$type", "LineString"], ["!=", "mode", "static"]],
+        paint: {
+            "line-color": "#10b981",
+            "line-dasharray": [0.2, 2],
+            "line-width": 3,
+        },
+    },
+    // VERTEX POINTS - MIDPOINTS
+    {
+        id: "gl-draw-polygon-midpoint",
+        type: "circle",
+        filter: ["all", ["==", "$type", "Point"], ["==", "meta", "midpoint"]],
+        paint: {
+            "circle-radius": 5,
+            "circle-color": "#f59e0b",
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#ffffff",
+        },
+    },
+    // VERTEX POINTS - ACTIVE / CLICKED POINTS
+    {
+        id: "gl-draw-point-active",
+        type: "circle",
+        filter: ["all", ["==", "$type", "Point"], ["==", "meta", "vertex"]],
+        paint: {
+            "circle-radius": 7,
+            "circle-color": "#ef4444",
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#ffffff",
+        },
+    },
+    // VERTEX POINTS - INACTIVE / ALL POLYGON CORNERS
+    {
+        id: "gl-draw-point-inactive",
+        type: "circle",
+        filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"]],
+        paint: {
+            "circle-radius": 6,
+            "circle-color": "#10b981",
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#ffffff",
+        },
+    },
+];
+
+export default function ClimateMap({ drawMode = "polygon", onSelectionChange, onModeChange }: ClimateMapProps) {
+    const mapContainer = useRef<HTMLDivElement | null>(null);
+    const map = useRef<maplibregl.Map | null>(null);
+    const drawRef = useRef<MapboxDraw | null>(null);
+
+    useEffect(() => {
+        if (!mapContainer.current || map.current) return;
+
+        const mapInstance = new maplibregl.Map({
+            container: mapContainer.current,
+            style: {
+                version: 8,
+                sources: {
+                    "osm-tiles": {
+                        type: "raster",
+                        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+                        tileSize: 256,
+                        attribution:
+                            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+                    },
+                },
+                layers: [
+                    {
+                        id: "osm-tiles-layer",
+                        type: "raster",
+                        source: "osm-tiles",
+                        minzoom: 0,
+                        maxzoom: 19,
+                    },
+                ],
+            },
+            center: [77.2167, 28.6139],
+            zoom: 10,
+        });
+
+        map.current = mapInstance;
+
+        // Standard navigation controls
+        mapInstance.addControl(
+            new maplibregl.NavigationControl({ showCompass: true }),
+            "top-right"
+        );
+
+        // Polygon drawing control
+        const drawControl = new MapboxDraw({
+            displayControlsDefault: true,
+            controls: {
+                polygon: true,
+                trash: true,
+                point: false,
+                line_string: false,
+                combine_features: false,
+                uncombine_features: false,
+            },
+            defaultMode: "draw_polygon",
+            styles: customDrawStyles,
+        });
+
+        mapInstance.addControl(drawControl as unknown as maplibregl.IControl, "top-left");
+        drawRef.current = drawControl;
+
+        const updateSelectedArea = () => {
+            if (!drawRef.current) return;
+            const data = drawRef.current.getAll();
+            if (data.features.length > 0) {
+                const latestFeature = data.features[data.features.length - 1] as Feature<Polygon | MultiPolygon>;
+                const { areaKm2, areaHectares } = calculateAreaMetrics(latestFeature);
+
+                if (onSelectionChange) {
+                    onSelectionChange({
+                        geometry: latestFeature,
+                        areaKm2,
+                        areaHectares,
+                    });
+                }
+            } else {
+                if (onSelectionChange) {
+                    onSelectionChange({
+                        geometry: null,
+                        areaKm2: 0,
+                        areaHectares: 0,
+                    });
+                }
+            }
+        };
+
+        (mapInstance as unknown as { on: (event: string, cb: () => void) => void }).on("draw.create", () => {
+            updateSelectedArea();
+            if (onModeChange) onModeChange("simple_select");
+        });
+        (mapInstance as unknown as { on: (event: string, cb: () => void) => void }).on("draw.update", updateSelectedArea);
+        (mapInstance as unknown as { on: (event: string, cb: () => void) => void }).on("draw.delete", updateSelectedArea);
+
+        return () => {
+            mapInstance.remove();
+            map.current = null;
+        };
+    }, [onSelectionChange, onModeChange]);
+
+    // Sync mode changes & toggle drawing cursor class on container
+    useEffect(() => {
+        if (!drawRef.current) return;
+
+        if (drawMode === "polygon") {
+            drawRef.current.changeMode("draw_polygon");
+            mapContainer.current?.classList.add("drawing-mode");
+        } else {
+            mapContainer.current?.classList.remove("drawing-mode");
+            if (drawMode === "delete") {
+                drawRef.current.deleteAll();
+                if (onSelectionChange) {
+                    onSelectionChange({ geometry: null, areaKm2: 0, areaHectares: 0 });
+                }
+                if (onModeChange) {
+                    onModeChange("polygon");
+                }
+            }
+        }
+    }, [drawMode, onSelectionChange, onModeChange]);
+
+    return <div ref={mapContainer} className="climate-map" />;
+}
