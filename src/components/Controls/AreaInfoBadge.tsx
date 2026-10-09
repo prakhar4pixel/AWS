@@ -1,4 +1,5 @@
 import type { SelectionInfo } from "../../types/gis";
+import { MapPin, BoxSelect } from "lucide-react";
 
 interface AreaInfoBadgeProps {
   selection: SelectionInfo | null;
@@ -8,7 +9,7 @@ export default function AreaInfoBadge({ selection }: AreaInfoBadgeProps) {
   if (!selection || !selection.geometry || selection.areaKm2 === 0) {
     return (
       <div className="area-info-badge hint">
-        <span className="badge-icon">📍</span>
+        <MapPin size={18} className="badge-icon" />
         <span>Draw a polygon on the map to select an urban area</span>
       </div>
     );
@@ -17,7 +18,7 @@ export default function AreaInfoBadge({ selection }: AreaInfoBadgeProps) {
   return (
     <div className="area-info-badge active">
       <div className="badge-header">
-        <span className="badge-icon">📐</span>
+        <BoxSelect size={14} className="badge-icon" />
         <span className="badge-title">Selected Area</span>
       </div>
       <div className="badge-values">
